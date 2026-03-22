@@ -1,0 +1,78 @@
+name: Build Wheels (Python 3.13)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build wheels on ${{ matrix.os }} (Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.13']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '${{ matrix.python-version }}'
+
+      - name: Install maturin
+        run: pip install maturin
+
+      - name: Build wheel
+        run: maturin build --release --out dist
+
+      - name: Show built wheels
+        shell: pwsh
+        run: |
+          Write-Host "Listing built wheels in dist/"
+          if (Test-Path dist) {
+            if ($IsWindows) {
+              dir dist
+            } else {
+              bash -c "ls -lh dist"
+            }
+          } else {
+            Write-Host "No dist directory found"
+          }
+
+      - name: Upload wheels as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.os }}-py${{ matrix.python-version }}
+          path: dist/*.whl
+
+  download:
+    name: Download and package wheels
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
+      - name: Flatten artifact folders
+        run: |
+          mkdir final_dist
+          find dist -name "*.whl" -exec cp {} final_dist/ \;
+          ls -lh final_dist
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: final_dist/*.whl
+          tag_name: v0.2.0-py313
+          name: Wheels for Python 3.13
+          body: "Pre-built wheels for Python 3.13"
+          draft: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
